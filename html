@@ -1,61 +1,225 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-  <meta charset="UTF-8">
-  <title>T-Rex Runner HTML5</title>
-  <style>
-    canvas {
-      background: #f4f4f4;
-      display: block;
-      margin: 50px auto;
-      border: 2px solid #000;
-    }
-
-    body {
-      text-align: center;
-      font-family: Arial, sans-serif;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Jogo Dino com Cenários 🌵🌊</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body {margin:0; display:flex; justify-content:center; align-items:center; height:100vh; touch-action:manipulation; overflow:hidden;}
+  canvas {border:2px solid #333;}
+</style>
 </head>
 <body>
-  <h1>T-Rex Runner - HTML5</h1>
-  <canvas id="gameCanvas" width="800" height="200"></canvas>
+<canvas id="gameCanvas"></canvas>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
 
-  <script>
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth * 0.95;
+canvas.height = 200;
 
-    // Tamanho do chão
-    const groundHeight = 20;
+let gameState='start';
+let score=0;
+let highScore=localStorage.getItem('highScore')||0;
+let speed=6;
 
-    // Dino
-    const dino = {
-      x: 50,
-      y: 0,
-      width: 40,
-      height: 40,
-      yVelocity: 0,
-      gravity: 1.5,
-      jumpForce: -18,
-      isJumping: false,
-    };
+// Dino
+let dino = {x:50, y:150, width:40, height:40, velocityY:0, gravity:1.5, jumpPower:-18, isJumping:false};
 
-    // Cacto
-    const cactus = {
-      x: canvas.width,
-      y: 160,
-      width: 20,
-      height: 40,
-      speed: 6,
-    };
+// Chão
+let groundX=0;
 
-    let gameOver = false;
+// Nuvens
+let clouds=[];
+for(let i=0;i<6;i++){clouds.push({x:Math.random()*canvas.width, y:Math.random()*60+20, speed:1+Math.random(), scale:0.8 + Math.random()*0.7});}
 
-    function drawDino() {
-      ctx.fillStyle = '#555';
-      ctx.fillRect(dino.x, dino.y, dino.width, dino.height);
+// Estrelas
+let stars=[];
+for(let i=0;i<50;i++){stars.push({x:Math.random()*canvas.width, y:Math.random()*100, size:Math.random()*2+1, alpha:Math.random()});}
+
+// Pássaros
+let birds=[];
+for(let i=0;i<5;i++){birds.push({x:Math.random()*canvas.width, y:Math.random()*50+20, speed:1+Math.random()*1.5});}
+
+// Lagoa
+const lake = {x: canvas.width/2, y:190, width:350, height:50};
+let passedLake=false;
+
+// Obstáculos
+let obstacles=[];
+function spawnObstacle(){
+  const rand=Math.random();
+  let obs={x:canvas.width, speed:speed};
+  if(rand<0.2) obs.type='small';
+  else if(rand<0.35) obs.type='tall';
+  else if(rand<0.5) obs.type='double';
+  else if(rand<0.65) obs.type='triple';
+  else obs.type='stone';
+  obs.width=10; obs.height=20;
+  const lastObs=obstacles[obstacles.length-1];
+  if(lastObs){const minGap=60+Math.random()*50; obs.x=Math.max(canvas.width,lastObs.x+lastObs.width+minGap);}
+  obs.y=200;
+  obstacles.push(obs);
+}
+setInterval(()=>{if(gameState==='playing') spawnObstacle()},1500);
+
+// Desenho Dino quadrado
+function drawDino(){
+    const x=dino.x, y=dino.y;
+    ctx.fillStyle='green';
+    ctx.fillRect(x, y+10, 40, 30); // corpo
+    ctx.fillRect(x+30, y, 15, 15); // cabeça
+
+    ctx.fillStyle='white';
+    ctx.beginPath(); ctx.arc(x+43, y+7, 3, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle='black';
+    ctx.beginPath(); ctx.arc(x+43, y+7, 1.5, 0, Math.PI*2); ctx.fill();
+
+    ctx.fillStyle='green';
+    ctx.fillRect(x+10, y+35, 8, 15);
+    ctx.fillRect(x+25, y+35, 8, 15);
+
+    ctx.beginPath();
+    ctx.moveTo(x, y+25);
+    ctx.lineTo(x-15, y+20);
+    ctx.lineTo(x, y+30);
+    ctx.closePath();
+    ctx.fill();
+}
+
+// Cactos retangulares
+function drawCactusType(x, y, type='small', scale=1){
+    ctx.fillStyle = '#2e7d32';
+    ctx.strokeStyle = '#1b5e20';
+    ctx.lineWidth = 2;
+    ctx.save(); ctx.translate(x, y); ctx.scale(scale, scale);
+
+    if(type==='small'){ctx.fillRect(-5, -35, 10, 35);}
+    else if(type==='tall'){ctx.fillRect(-7, -120, 14, 120);}
+    else if(type==='double'){ctx.fillRect(-7, -90, 14, 90); ctx.fillRect(7, -50, 8, 40);}
+    else if(type==='triple'){ctx.fillRect(-7, -90, 14, 90); ctx.fillRect(7, -50, 8, 40); ctx.fillRect(-15, -60, 8, 30);}
+    
+    ctx.restore();
+}
+
+// Pedras retas
+function drawStone(x,y,size){ctx.fillStyle='#777'; ctx.fillRect(x-size/2, y-size/4, size, size/2); ctx.strokeStyle='#555'; ctx.strokeRect(x-size/2, y-size/4, size, size/2);}
+
+// Lagoa detalhada
+function drawDetailedLake(){
+    const lakeX=lake.x, lakeY=lake.y, lakeWidth=lake.width, lakeHeight=lake.height;
+    const gradient=ctx.createRadialGradient(lakeX,lakeY,lakeHeight/4,lakeX,lakeY,lakeWidth/2);
+    gradient.addColorStop(0,'#4da6ff'); gradient.addColorStop(1,'#0073e6'); ctx.fillStyle=gradient;
+    ctx.beginPath(); ctx.ellipse(lakeX,lakeY,lakeWidth,lakeHeight,0,0,Math.PI*2); ctx.fill();
+
+    ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=1;
+    for(let i=-3;i<=3;i++){ctx.beginPath(); ctx.ellipse(lakeX,lakeY+i*5,lakeWidth-20*Math.abs(i),lakeHeight-4,0,0,Math.PI*2); ctx.stroke();}
+    ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.ellipse(lakeX+60,lakeY-10,70,10,0,0,Math.PI*2); ctx.fill();
+
+    for(let i=-90;i<=90;i+=30){ctx.fillStyle='#777'; ctx.fillRect(lakeX+i, lakeY+10, 6, 6);}
+}
+
+// Flores
+function drawFlowers(){for(let i=0;i<5;i++){const x=50+i*120+Math.random()*30; const y=180+Math.random()*10; ctx.fillStyle=['red','yellow','pink','orange'][Math.floor(Math.random()*4)]; ctx.fillRect(x-2,y-2,4,4); ctx.strokeStyle='green'; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y+6); ctx.stroke();}}
+
+// Folhas
+function drawLeaves(){for(let i=0;i<obstacles.length;i++){const obs=obstacles[i]; if(obs.type!=='stone'){ctx.fillStyle='green'; for(let j=0;j<3;j++){const lx=obs.x+(Math.random()*20-10); const ly=200-(Math.random()*30+10); ctx.fillRect(lx-2,ly-3,4,6);}}}}
+
+// Pássaros
+function drawBirds(){ctx.fillStyle='black'; birds.forEach(b=>{ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(b.x+5,b.y-3); ctx.lineTo(b.x+10,b.y); ctx.stroke(); b.x-=b.speed; if(b.x<-10) b.x = canvas.width+10;});}
+
+// Nuvens
+function drawDetailedCloud(x,y,scale=1){ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fillRect(x-15*scale,y-10*scale,30*scale,10*scale); ctx.fillRect(x-20*scale,y,40*scale,10*scale); ctx.fillRect(x-10*scale,y+5,20*scale,8);}
+function drawAllClouds(){clouds.forEach(c=>{drawDetailedCloud(c.x,c.y,c.scale); c.x-=c.speed; if(c.x<-60) c.x=canvas.width+60;});}
+
+// Estrelas
+function drawStars(){stars.forEach(s=>{ctx.fillStyle=`rgba(255,255,255,${s.alpha})`; ctx.fillRect(s.x, s.y, s.size, s.size); s.alpha=Math.random();});}
+
+// Sol e Lua
+let sunX=50;
+function drawSun(){ctx.fillStyle='yellow'; ctx.fillRect(sunX-20,40,40,40); sunX+=0.2; if(sunX>canvas.width) sunX=-20;}
+function drawMoon(){ctx.fillStyle='lightyellow'; ctx.fillRect(canvas.width-60,35,30,30);}
+
+// Relâmpago
+function drawLightning(){if(Math.random()<0.02){ctx.strokeStyle='yellow'; ctx.lineWidth=2; ctx.beginPath(); let lx=Math.random()*canvas.width; ctx.moveTo(lx,0); ctx.lineTo(lx+5,50); ctx.lineTo(lx-5,100); ctx.stroke();}}
+
+// Chão
+function drawGround(){ctx.fillStyle='black'; ctx.fillRect(groundX,180,canvas.width*2,20); groundX-=speed; if(groundX<=-canvas.width) groundX=0;}
+
+// Obstáculos
+function drawObstacles(){obstacles.forEach(obs=>{if(obs.type==='stone') drawStone(obs.x,200,10); else drawCactusType(obs.x,200,obs.type,0.8+Math.random()*0.5); obs.x-=speed;}); obstacles=obstacles.filter(obs=>obs.x+obs.width>0);}
+
+// Colisão
+function checkCollision(){for(let obs of obstacles){let obsHeight=obs.type==='stone'?10:45;if(dino.x<obs.x+obs.width && dino.x+dino.width>obs.x && dino.y+dino.height>200-obsHeight){gameState='gameover'; if(score>highScore){highScore=score; localStorage.setItem('highScore',highScore);}}}}
+
+// Pontuação extra Lagoa
+function checkLakePassage(){if(dino.x+dino.width>lake.x-lake.width/2 && dino.x<lake.x+lake.width/2 && dino.y+dino.height>lake.y-lake.height/2){if(!passedLake){score+=50; passedLake=true;}} else {passedLake=false;}}
+
+// Score
+function drawScore(){ctx.fillStyle='black'; ctx.font='20px Arial'; ctx.fillText(`Score: ${score}`, canvas.width-150,30); ctx.fillText(`Recorde: ${highScore}`, canvas.width-150,55);}
+
+// Cenários
+const scenarios = [
+  {score:0, background:'#a0e0ff', clouds:true, sun:true, moon:false, stars:false, lightning:false}, // manhã
+  {score:200, background:'#ffa07a', clouds:true, sun:true, moon:false, stars:false, lightning:false}, // pôr do sol
+  {score:400, background:'#001133', clouds:false, sun:false, moon:true, stars:true, lightning:false}, // noite
+  {score:600, background:'#555555', clouds:true, sun:false, moon:false, stars:false, lightning:true}, // tempestade
+  {score:800, background:'#d0a0ff', clouds:true, sun:true, moon:false, stars:false, lightning:false}, // aurora
+  {score:1000, background:'#ffb347', clouds:true, sun:true, moon:false, stars:false, lightning:false} // deserto
+];
+
+function getCurrentScenario() {
+  let current = scenarios[0];
+  for(let i=0;i<scenarios.length;i++){
+    if(score >= scenarios[i].score) current = scenarios[i];
+    else break;
+  }
+  return current;
+}
+
+// Tela inicial / gameover
+function drawStartScreen(){ctx.fillStyle='black'; ctx.font='24px Arial'; ctx.fillText('Toque na tela para começar', canvas.width/2-130,100);}
+function drawGameOver(){ctx.fillStyle='red'; ctx.font='24px Arial'; ctx.fillText('Game Over!', canvas.width/2-60,100); ctx.font='18px Arial'; ctx.fillText('Toque para reiniciar', canvas.width/2-80,130);}
+
+// Loop principal
+function update(){
+    let scen = getCurrentScenario();
+    ctx.fillStyle=scen.background;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    if(scen.clouds) drawAllClouds();
+    if(scen.sun) drawSun();
+    if(scen.moon) drawMoon();
+    if(scen.stars) drawStars();
+    if(scen.lightning) drawLightning();
+
+    drawDetailedLake();
+    drawGround();
+    drawFlowers();
+    drawLeaves();
+    drawBirds();
+
+    if(gameState==='start') drawStartScreen();
+    else if(gameState==='playing'){
+        if(dino.isJumping){dino.velocityY+=dino.gravity; dino.y+=dino.velocityY; if(dino.y>=150){dino.y=150; dino.velocityY=0; dino.isJumping=false;}}
+        drawObstacles();
+        drawDino();
+        checkCollision();
+        checkLakePassage();
+        drawScore();
+        score++;
+        if(score % 200 === 0) speed+=0.5;
     }
+    else if(gameState==='gameover'){drawDino(); drawObstacles(); drawGameOver(); drawScore();}
 
-    function drawCactus() {
-      ctx.fillStyle = 'green';
-      ctx.fillRect(cactus.x, c
+    requestAnimationFrame(update);
+}
+
+// Controles
+canvas.addEventListener('touchstart',()=>{if(gameState==='start'||gameState==='gameover'){gameState='playing'; score=0; obstacles=[]; dino.y=150; dino.velocityY=0; speed=6; sunX=50;} else if(!dino.isJumping){dino.velocityY=dino.jumpPower; dino.isJumping=true;}});
+document.addEventListener('keydown', e=>{if(e.code==='Space'){if(gameState==='start'||gameState==='gameover'){gameState='playing'; score=0; obstacles=[]; dino.y=150; dino.velocityY=0; speed=6; sunX=50;} else if(!dino.isJumping){dino.velocityY=dino.jumpPower; dino.isJumping=true;}}});
+
+update();
+</script>
+</body>
+</html>
