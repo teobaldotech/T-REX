@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>T-Rex Runner HTML5</title>
+  <style>
+    canvas {
+      background: #f4f4f4;
+      display: block;
+      margin: 50px auto;
+      border: 2px solid #000;
+    }
+
+    body {
+      text-align: center;
+      font-family: Arial, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <h1>T-Rex Runner - HTML5</h1>
+  <canvas id="gameCanvas" width="800" height="200"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Tamanho do chão
+    const groundHeight = 20;
+
+    // Dino
+    const dino = {
+      x: 50,
+      y: 0,
+      width: 40,
+      height: 40,
+      yVelocity: 0,
+      gravity: 1.5,
+      jumpForce: -18,
+      isJumping: false,
+    };
+
+    // Cacto
+    const cactus = {
+      x: canvas.width,
+      y: 160,
+      width: 20,
+      height: 40,
+      speed: 6,
+    };
+
+    let gameOver = false;
+
+    function drawDino() {
+      ctx.fillStyle = '#555';
+      ctx.fillRect(dino.x, dino.y, dino.width, dino.height);
+    }
+
+    function drawCactus() {
+      ctx.fillStyle = 'green';
+      ctx.fillRect(cactus.x, c
