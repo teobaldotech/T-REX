@@ -33,6 +33,11 @@ canvas.width = window.innerWidth * 0.95;
 canvas.height = 250;
 
 // ---------------------------
+// CONFIGURAÇÃO DE ALTURA DO CHÃO (UNIFICADA)
+// ---------------------------
+const GROUND_Y = 210; 
+
+// ---------------------------
 // VARIÁVEIS DO JOGO
 // ---------------------------
 let gameState = "start";
@@ -41,16 +46,16 @@ let highScore = localStorage.getItem("highScore") || 0;
 let speed = 6;
 
 // ---------------------------
-// DINO ANIMADO (PULO ALTO)
+// DINO ANIMADO (AJUSTADO PARA O CHÃO SEGURO)
 // ---------------------------
 const dino = {
   x: 60,
-  y: 180,
+  y: GROUND_Y - 45, // Renderiza exatamente em cima do chão
   width: 40,
   height: 45,
   velocityY: 0,
   gravity: 1.2,
-  jumpPower: -24,
+  jumpPower: -20, // Ajustado para a nova física de chão
   isJumping: false,
   legFrame: 0,
   justJumped: false
@@ -73,7 +78,7 @@ for (let i = 0; i < 6; i++) {
 }
 
 // ---------------------------
-// OBSTÁCULOS (SEM CACTOS E SEM BURACOS)
+// OBSTÁCULOS (SINCRONIZADOS)
 // ---------------------------
 let obstacles = [];
 
@@ -81,24 +86,29 @@ function spawnObstacle() {
   const types = ["stoneSmall", "stoneMedium", "stoneLarge", "bush", "log"];
   const type = types[Math.floor(Math.random() * types.length)];
 
+  // Larguras base para evitar colisões desalinhadas
+  let width = 30;
+  let height = 30;
+
+  if (type === "stoneSmall") { width = 25; height = 20; }
+  if (type === "stoneMedium") { width = 30; height = 30; }
+  if (type === "stoneLarge") { width = 35; height = 45; }
+  if (type === "bush") { width = 40; height = 25; }
+  if (type === "log") { width = 45; height = 20; }
+
   const obs = {
     x: canvas.width + 20,
     type: type,
-    width: 30,
-    height: 30,
+    width: width,
+    height: height,
     counted: false
   };
-
-  if (type === "stoneSmall") obs.height = 20;
-  if (type === "stoneMedium") obs.height = 30;
-  if (type === "stoneLarge") obs.height = 45;
-  if (type === "bush") obs.height = 25;
-  if (type === "log") obs.height = 35;
 
   obstacles.push(obs);
 }
 
-setInterval(() => {
+// Spawner controlado pelo estado do jogo
+let spawnInterval = setInterval(() => {
   if (gameState === "playing") spawnObstacle();
 }, 1400);
 
@@ -109,11 +119,11 @@ const missions = [
   { type: "distance", goal: 500 },
   { type: "distance", goal: 1500 },
   { type: "distance", goal: 3000 },
+  { type: "obstacles", goal: 10 },
   { type: "obstacles", goal: 20 },
-  { type: "obstacles", goal: 40 },
-  { type: "jumps", goal: 15 },
+  { type: "jumps", goal: 8 },
+  { type: "survive", goal: 15 },
   { type: "survive", goal: 30 },
-  { type: "survive", goal: 60 },
   { type: "night", goal: 1 },
   { type: "day", goal: 1 }
 ];
@@ -139,32 +149,39 @@ function drawDino() {
   const x = dino.x;
   const y = dino.y;
 
+  // Corpo do Dino
   ctx.fillStyle = "#2ecc71";
   ctx.beginPath();
-  ctx.roundRect(x, y, 40, 30, 8);
+  ctx.roundRect(x, y + 15, 40, 30, 8);
   ctx.fill();
 
+  // Cabeça
   ctx.beginPath();
-  ctx.roundRect(x + 25, y - 20, 25, 25, 8);
+  ctx.roundRect(x + 25, y, 25, 25, 8);
   ctx.fill();
 
+  // Olho Branco
   ctx.fillStyle = "white";
   ctx.beginPath();
-  ctx.arc(x + 42, y - 8, 4, 0, Math.PI * 2);
+  ctx.arc(x + 42, y + 8, 4, 0, Math.PI * 2);
   ctx.fill();
 
+  // Pupila
   ctx.fillStyle = "black";
   ctx.beginPath();
-  ctx.arc(x + 42, y - 8, 2, 0, Math.PI * 2);
+  ctx.arc(x + 42, y + 8, 2, 0, Math.PI * 2);
   ctx.fill();
 
+  // Pernas Animadas (só mexem se não estiver pulando)
   ctx.fillStyle = "#27ae60";
-  const legOffset = dino.legFrame < 10 ? 0 : 6;
+  let legOffset = 0;
+  if (!dino.isJumping) {
+    legOffset = dino.legFrame < 10 ? 0 : 6;
+    dino.legFrame = (dino.legFrame + 1) % 20;
+  }
 
-  ctx.fillRect(x + 8, y + 28 + legOffset, 8, 15);
-  ctx.fillRect(x + 24, y + 28 - legOffset, 8, 15);
-
-  dino.legFrame = (dino.legFrame + 1) % 20;
+  ctx.fillRect(x + 8, y + 40 + (legOffset ? 2 : -2), 8, 10);
+  ctx.fillRect(x + 24, y + 40 + (legOffset ? -2 : 2), 8, 10);
 }
 
 // ---------------------------
@@ -200,39 +217,44 @@ function updateSky() {
 // DESENHAR OBSTÁCULOS
 // ---------------------------
 function drawObstacle(obs) {
+  ctx.fillStyle = "#6e6e6e";
+
   if (obs.type.includes("stone")) {
-    ctx.fillStyle = "#6e6e6e";
+    ctx.fillStyle = "#7f8c8d";
     ctx.beginPath();
-    ctx.ellipse(obs.x, 200 - obs.height / 2, obs.width, obs.height / 2, 0, 0, Math.PI * 2);
+    // Desenha a elipse usando o GROUND_Y como base inferior real
+    ctx.ellipse(obs.x + obs.width/2, GROUND_Y - obs.height/2, obs.width/2, obs.height/2, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
   if (obs.type === "bush") {
-    ctx.fillStyle = "#2ecc71";
+    ctx.fillStyle = "#27ae60";
     ctx.beginPath();
-    ctx.ellipse(obs.x, 200 - obs.height / 2, 25, 15, 0, 0, Math.PI * 2);
+    ctx.ellipse(obs.x + obs.width/2, GROUND_Y - obs.height/2, obs.width/2, obs.height/2, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
   if (obs.type === "log") {
     ctx.fillStyle = "#8b4513";
-    ctx.fillRect(obs.x - 25, 200 - obs.height, 50, 15);
+    // Desenha o retângulo partindo do chão para cima baseado na hitbox real X e Y
+    ctx.fillRect(obs.x, GROUND_Y - obs.height, obs.width, obs.height);
   }
 }
 
 // ---------------------------
-// COLISÃO
+// COLISÃO APRIMORADA (AABB)
 // ---------------------------
 function checkCollision(obs) {
   return (
     dino.x < obs.x + obs.width &&
     dino.x + dino.width > obs.x &&
-    dino.y + dino.height > 200 - obs.height
+    dino.y < GROUND_Y - obs.height + obs.height &&
+    dino.y + dino.height > GROUND_Y - obs.height
   );
 }
 
 // ---------------------------
-// MISSÕES
+// ATUALIZAR MISSÕES
 // ---------------------------
 function updateMission() {
   if (!currentMission || missionCompleted) return;
@@ -244,7 +266,7 @@ function updateMission() {
 
   if (currentMission.type === "obstacles") {
     obstacles.forEach(o => {
-      if (o.x + 20 < dino.x && !o.counted) {
+      if (o.x + o.width < dino.x && !o.counted) {
         o.counted = true;
         missionProgress++;
       }
@@ -255,7 +277,7 @@ function updateMission() {
   if (currentMission.type === "jumps") {
     if (dino.justJumped) {
       missionProgress++;
-      dino.justJumped = false;
+      dino.justJumped = false; // Consome a flag para evitar looping de contagem
     }
     if (missionProgress >= currentMission.goal) completeMission();
   }
@@ -284,46 +306,29 @@ function drawMissionUI() {
 
   ctx.fillStyle = "black";
   ctx.font = "16px Arial";
-
-  ctx.fillText("Missão:", canvas.width - 200, 30);
+  ctx.fillText("Missão:", canvas.width - 220, 30);
 
   let text = "";
+  if (currentMission.type === "distance") text = `Corra ${currentMission.goal}m`;
+  if (currentMission.type === "obstacles") text = `Desvie de ${currentMission.goal} obst.`;
+  if (currentMission.type === "jumps") text = `Dê ${currentMission.goal} pulos`;
+  if (currentMission.type === "survive") text = `Sobreviva ${currentMission.goal}s`;
+  if (currentMission.type === "night") text = `Chegue à noite`;
+  if (currentMission.type === "day") text = `Chegue ao dia`;
 
-  if (currentMission.type === "distance")
-    text = `Corra ${currentMission.goal}m`;
-
-  if (currentMission.type === "obstacles")
-    text = `Desvie de ${currentMission.goal} obstáculos`;
-
-  if (currentMission.type === "jumps")
-    text = `Dê ${currentMission.goal} pulos`;
-
-  if (currentMission.type === "survive")
-    text = `Sobreviva ${currentMission.goal}s`;
-
-  if (currentMission.type === "night")
-    text = `Chegue à noite`;
-
-  if (currentMission.type === "day")
-    text = `Chegue ao dia`;
-
-  ctx.fillText(text, canvas.width - 200, 55);
+  ctx.fillText(text, canvas.width - 220, 55);
 
   if (!missionCompleted) {
-    ctx.fillText(
-      `Progresso: ${missionProgress} / ${currentMission.goal}`,
-      canvas.width - 200,
-      80
-    );
+    ctx.fillText(`Progresso: ${missionProgress} / ${currentMission.goal}`, canvas.width - 220, 80);
   } else {
     ctx.fillStyle = "green";
-    ctx.font = "20px Arial";
+    ctx.font = "bold 16px Arial";
     ctx.fillText("✅ MISSÃO COMPLETA!", canvas.width - 220, 80);
   }
 }
 
 // ---------------------------
-// LOOP DO JOGO
+// LOOP PRINCIPAL DO JOGO
 // ---------------------------
 function update() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -331,53 +336,69 @@ function update() {
   updateSky();
   drawClouds();
 
+  // Chão limpo e bem posicionado
   ctx.fillStyle = "#333";
-  ctx.fillRect(0, 210, canvas.width, 40);
+  ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+
+  if (gameState === "playing") {
+    score++;
+    updateMission();
+    
+    // Aumenta ligeiramente a dificuldade a cada 500 pontos
+    speed = 6 + Math.floor(score / 500) * 0.5; 
+  }
 
   obstacles.forEach(obs => {
     drawObstacle(obs);
-    obs.x -= speed;
-
-    if (checkCollision(obs)) {
-      gameState = "gameover";
+    
+    if (gameState === "playing") {
+      obs.x -= speed;
+      if (checkCollision(obs)) {
+        gameState = "gameover";
+      }
     }
   });
 
   obstacles = obstacles.filter(o => o.x > -50);
 
-  drawDino();
+  // Aplica física se estiver jogando ou se bateu no ar
+  if (gameState === "playing" || dino.y < GROUND_Y - dino.height) {
+    dino.velocityY += dino.gravity;
+    dino.y += dino.velocityY;
+  }
 
-  dino.velocityY += dino.gravity;
-  dino.y += dino.velocityY;
-
-  if (dino.y > 180) {
-    dino.y = 180;
+  // Trava o Dino na linha do chão de forma consistente
+  if (dino.y > GROUND_Y - dino.height) {
+    dino.y = GROUND_Y - dino.height;
     dino.velocityY = 0;
     dino.isJumping = false;
   }
 
-  if (gameState === "playing") {
-    score++;
-    updateMission();
+  drawDino();
 
+  // Renderização da UI de Texto fixa
+  if (gameState === "playing") {
     ctx.fillStyle = "black";
     ctx.font = "20px Arial";
     ctx.fillText("Score: " + score, 20, 30);
     ctx.fillText("Recorde: " + highScore, 20, 55);
-
     drawMissionUI();
   }
 
   if (gameState === "start") {
     ctx.fillStyle = "black";
-    ctx.font = "28px Arial";
-    ctx.fillText("Toque para começar", canvas.width / 2 - 120, 120);
+    ctx.font = "bold 24px Arial";
+    ctx.fillText("Toque para começar", canvas.width / 2 - 110, 120);
   }
 
   if (gameState === "gameover") {
     ctx.fillStyle = "red";
-    ctx.font = "30px Arial";
-    ctx.fillText("GAME OVER", canvas.width / 2 - 90, 120);
+    ctx.font = "bold 30px Arial";
+    ctx.fillText("GAME OVER", canvas.width / 2 - 90, 100);
+    
+    ctx.fillStyle = "black";
+    ctx.font = "18px Arial";
+    ctx.fillText("Toque para reiniciar", canvas.width / 2 - 80, 135);
 
     if (score > highScore) {
       highScore = score;
@@ -391,9 +412,11 @@ function update() {
 update();
 
 // ---------------------------
-// CONTROLES
+// CONTROLES E RESET SEGURADOS
 // ---------------------------
-window.addEventListener("pointerdown", () => {
+window.addEventListener("pointerdown", (e) => {
+  e.preventDefault(); // Evita zoom de duplo clique em telas mobile
+
   if (gameState === "start") {
     gameState = "playing";
     return;
@@ -401,15 +424,18 @@ window.addEventListener("pointerdown", () => {
   if (gameState === "gameover") {
     obstacles = [];
     score = 0;
-    dino.y = 180;
+    speed = 6; // Reseta velocidade original
+    dino.y = GROUND_Y - dino.height;
+    dino.velocityY = 0;
+    dino.isJumping = false;
     pickMission();
     gameState = "playing";
     return;
   }
-  if (!dino.isJumping) {
+  if (!dino.isJumping && gameState === "playing") {
     dino.velocityY = dino.jumpPower;
     dino.isJumping = true;
-    dino.justJumped = true;
+    dino.justJumped = true; // Ativa a flag capturada imediatamente pelo validador de missões
   }
 });
 </script>
